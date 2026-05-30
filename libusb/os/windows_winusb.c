@@ -3152,9 +3152,16 @@ static int winusbx_configure_endpoints(int sub_api, struct libusb_device_handle 
 			ALLOW_PARTIAL_READS, sizeof(UCHAR), &policy))
 			usbi_dbg(HANDLE_CTX(dev_handle), "failed to enable ALLOW_PARTIAL_READS for endpoint %02X", endpoint_address);
 
+		/* Disable AUTO_CLEAR_STALL to report stalls immediately.
+		   When enabled, WinUSB internally sends CLEAR_FEATURE(ENDPOINT_HALT)
+		   before reporting the stall. If the device is unresponsive, this
+		   blocks for seconds. With it disabled, stall behavior matches
+		   Linux and macOS: reported immediately, application recovers via
+		   libusb_clear_halt(). */
+		policy = false;
 		if (!WinUSBX[sub_api].SetPipePolicy(winusb_handle, endpoint_address,
 			AUTO_CLEAR_STALL, sizeof(UCHAR), &policy))
-			usbi_dbg(HANDLE_CTX(dev_handle), "failed to enable AUTO_CLEAR_STALL for endpoint %02X", endpoint_address);
+			usbi_dbg(HANDLE_CTX(dev_handle), "failed to disable AUTO_CLEAR_STALL for endpoint %02X", endpoint_address);
 
 		if (sub_api == SUB_API_LIBUSBK) {
 			if (!WinUSBX[sub_api].SetPipePolicy(winusb_handle, endpoint_address,
