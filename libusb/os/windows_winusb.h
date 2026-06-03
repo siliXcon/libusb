@@ -90,6 +90,7 @@ struct windows_usb_api_backend {
 	int (*endpoint_supports_raw_io)(int sub_api, struct libusb_device_handle *dev_handle, uint8_t endpoint);
 	int (*endpoint_set_raw_io)(int sub_api, struct libusb_device_handle *dev_handle, uint8_t endpoint, int enable);
 	int (*get_max_raw_io_transfer_size)(int sub_api, struct libusb_device_handle *dev_handle, uint8_t endpoint);
+	int (*set_auto_clear_halt)(int sub_api, struct libusb_device_handle *dev_handle, unsigned char endpoint, int enable);
 };
 
 extern const struct windows_usb_api_backend usb_api_backend[USB_API_MAX];

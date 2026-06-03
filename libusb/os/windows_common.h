@@ -361,6 +361,8 @@ struct windows_backend {
 	int (*get_max_raw_io_transfer_size)(
                 struct libusb_device_handle *dev_handle,
 		uint8_t endpoint);
+	int (*set_auto_clear_halt)(struct libusb_device_handle *dev_handle,
+		unsigned char endpoint, int enable);
 };
 
 struct windows_context_priv {

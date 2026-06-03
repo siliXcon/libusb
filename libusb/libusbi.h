@@ -1417,6 +1417,22 @@ struct usbi_os_backend {
 		struct libusb_device_handle *dev_handle,
 		uint8_t endpoint);
 
+	/* Enable/disable auto clear halt (AUTO_CLEAR_STALL) for an endpoint.
+	 * Optional.
+	 *
+	 * When enabled (default on Windows/WinUSB), the driver automatically
+	 * sends CLEAR_FEATURE(ENDPOINT_HALT) when a stall is detected.
+	 * When disabled, stalls are reported immediately and the application
+	 * must call libusb_clear_halt() to recover.
+	 *
+	 * Return:
+	 * - 0 on success
+	 * - LIBUSB_ERROR_NOT_SUPPORTED if not supported by the backend
+	 * - another LIBUSB_ERROR code on other failure
+	 */
+	int (*set_auto_clear_halt)(struct libusb_device_handle *dev_handle,
+		unsigned char endpoint, int enable);
+
 	/* Destroy a device. Optional.
 	 *
 	 * This function is called when the last reference to a device is

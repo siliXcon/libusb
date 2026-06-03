@@ -2371,6 +2371,39 @@ int API_EXPORTED libusb_get_max_raw_io_transfer_size(
 		dev_handle, endpoint);
 }
 
+/** \ingroup libusb_dev
+ * Set or clear the AUTO_CLEAR_STALL (auto clear halt) pipe policy for an
+ * endpoint.
+ *
+ * When AUTO_CLEAR_STALL is enabled (the default), the host controller driver
+ * automatically clears a stalled endpoint without stopping the data flow.
+ * This can introduce significant latency when communicating with unresponsive
+ * devices, as the driver retries internally before reporting the error.
+ *
+ * Disabling AUTO_CLEAR_STALL causes stall conditions to be reported
+ * immediately, allowing the application to handle them directly using
+ * libusb_clear_halt().
+ *
+ * This function is currently only supported on Windows (WinUSB backend).
+ *
+ * \param dev_handle a device handle
+ * \param endpoint the endpoint address (including direction bit)
+ * \param enable 0 to disable, non-zero to enable AUTO_CLEAR_STALL
+ * \returns LIBUSB_SUCCESS on success
+ * \returns LIBUSB_ERROR_NOT_FOUND if the endpoint does not exist
+ * \returns LIBUSB_ERROR_NOT_SUPPORTED if not supported on this platform
+ * \returns LIBUSB_ERROR_INVALID_PARAM if the endpoint address is invalid
+ * \returns another LIBUSB_ERROR code on other failure
+ */
+int API_EXPORTED libusb_set_auto_clear_halt(
+	libusb_device_handle *dev_handle, unsigned char endpoint, int enable)
+{
+	if (!usbi_backend.set_auto_clear_halt)
+		return LIBUSB_ERROR_NOT_SUPPORTED;
+
+	return usbi_backend.set_auto_clear_halt(dev_handle, endpoint, enable);
+}
+
 /** \ingroup libusb_lib
  * Deprecated. Use libusb_set_option() or libusb_init_context() instead,
  * with the \ref LIBUSB_OPTION_LOG_LEVEL option.

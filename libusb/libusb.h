@@ -1869,6 +1869,10 @@ int LIBUSB_CALL libusb_endpoint_set_raw_io(libusb_device_handle *dev_handle,
 int LIBUSB_CALL libusb_get_max_raw_io_transfer_size(
 	libusb_device_handle *dev_handle,
 	uint8_t endpoint);
+int LIBUSB_CALL libusb_set_auto_clear_halt(
+	libusb_device_handle *dev_handle,
+	unsigned char endpoint,
+	int enable);
 
 /* async I/O */
 

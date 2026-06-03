@@ -729,4 +729,5 @@ const struct windows_backend usbdk_backend = {
 	NULL,	/* endpoint_supports_raw_io */
 	NULL,	/* endpoint_set_raw_io */
 	NULL,	/* get_max_raw_io_transfer_size */
+	NULL,	/* set_auto_clear_halt */
 };

@@ -172,6 +172,8 @@ EXPORTS
   libusb_release_interface@8 = libusb_release_interface
   libusb_reset_device
   libusb_reset_device@4 = libusb_reset_device
+  libusb_set_auto_clear_halt
+  libusb_set_auto_clear_halt@12 = libusb_set_auto_clear_halt
   libusb_set_auto_detach_kernel_driver
   libusb_set_auto_detach_kernel_driver@8 = libusb_set_auto_detach_kernel_driver
   libusb_set_configuration

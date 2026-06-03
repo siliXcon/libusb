@@ -64,6 +64,7 @@ static enum libusb_transfer_status winusbx_copy_transfer_data(int sub_api, struc
 static int winusbx_endpoint_supports_raw_io(int sub_api, struct libusb_device_handle* dev_handle, uint8_t endpoint);
 static int winusbx_endpoint_set_raw_io(int sub_api, struct libusb_device_handle* dev_handle, uint8_t endpoint, int enable);
 static int winusbx_get_max_raw_io_transfer_size(int sub_api, struct libusb_device_handle* dev_handle, uint8_t endpoint);
+static int winusbx_set_auto_clear_halt(int sub_api, struct libusb_device_handle *dev_handle, unsigned char endpoint, int enable);
 // HID API prototypes
 static bool hid_init(struct libusb_context *ctx);
 static void hid_exit(void);
@@ -93,6 +94,7 @@ static enum libusb_transfer_status composite_copy_transfer_data(int sub_api, str
 static int composite_endpoint_supports_raw_io(int sub_api, struct libusb_device_handle* dev_handle, uint8_t endpoint);
 static int composite_endpoint_set_raw_io(int sub_api, struct libusb_device_handle* dev_handle, uint8_t endpoint, int enable);
 static int composite_get_max_raw_io_transfer_size(int sub_api, struct libusb_device_handle* dev_handle, uint8_t endpoint);
+static int composite_set_auto_clear_halt(int sub_api, struct libusb_device_handle *dev_handle, unsigned char endpoint, int enable);
 
 static usbi_mutex_t autoclaim_lock;
 
@@ -2686,6 +2688,21 @@ static int winusb_get_max_raw_io_transfer_size(
 	return priv->apib->get_max_raw_io_transfer_size(SUB_API_NOTSET, dev_handle, endpoint);
 }
 
+static int
+winusb_set_auto_clear_halt(
+	struct libusb_device_handle *dev_handle,
+	unsigned char endpoint, int enable)
+{
+	struct winusb_device_priv *priv = usbi_get_device_priv(dev_handle->dev);
+
+	if (priv->apib->set_auto_clear_halt == NULL) {
+		usbi_err(HANDLE_CTX(dev_handle), "device driver does not support setting AUTO_CLEAR_STALL.");
+		return LIBUSB_ERROR_NOT_SUPPORTED;
+	}
+
+	return priv->apib->set_auto_clear_halt(SUB_API_NOTSET, dev_handle, endpoint, enable);
+}
+
 // NB: MSVC6 does not support named initializers.
 const struct windows_backend winusb_backend = {
 	winusb_init,
@@ -2712,6 +2729,7 @@ const struct windows_backend winusb_backend = {
 	winusb_endpoint_supports_raw_io,
 	winusb_endpoint_set_raw_io,
 	winusb_get_max_raw_io_transfer_size,
+	winusb_set_auto_clear_halt,
 };
 
 /*
@@ -2748,6 +2766,7 @@ const struct windows_usb_api_backend usb_api_backend[USB_API_MAX] = {
 		NULL,   /* endpoint_supports_raw_io */
 		NULL,   /* endpoint_set_raw_io */
 		NULL,   /* get_max_raw_io_transfer_size */
+		NULL,   /* set_auto_clear_halt */
 	},
 	{
 		USB_API_HUB,
@@ -2772,6 +2791,7 @@ const struct windows_usb_api_backend usb_api_backend[USB_API_MAX] = {
 		NULL,   /* endpoint_supports_raw_io */
 		NULL,   /* endpoint_set_raw_io */
 		NULL,   /* get_max_raw_io_transfer_size */
+		NULL,   /* set_auto_clear_halt */
 	},
 	{
 		USB_API_COMPOSITE,
@@ -2796,6 +2816,7 @@ const struct windows_usb_api_backend usb_api_backend[USB_API_MAX] = {
 		composite_endpoint_supports_raw_io,
 		composite_endpoint_set_raw_io,
 		composite_get_max_raw_io_transfer_size,
+		composite_set_auto_clear_halt,
 	},
 	{
 		USB_API_WINUSBX,
@@ -2820,6 +2841,7 @@ const struct windows_usb_api_backend usb_api_backend[USB_API_MAX] = {
 		winusbx_endpoint_supports_raw_io,
 		winusbx_endpoint_set_raw_io,
 		winusbx_get_max_raw_io_transfer_size,
+		winusbx_set_auto_clear_halt,
 	},
 	{
 		USB_API_HID,
@@ -2844,6 +2866,7 @@ const struct windows_usb_api_backend usb_api_backend[USB_API_MAX] = {
 		NULL,   /* endpoint_supports_raw_io */
 		NULL,   /* endpoint_set_raw_io */
 		NULL,   /* get_max_raw_io_transfer_size */
+		NULL,   /* set_auto_clear_halt */
 	},
 };
 
@@ -4132,6 +4155,75 @@ static int winusbx_get_max_raw_io_transfer_size(int sub_api, struct libusb_devic
 	usbi_dbg(ctx, "maximum transfer size for endpoint 0x%02X is %lu", endpoint, max_transfer_size);
 
 	return (int)max_transfer_size;
+}
+
+static int
+winusbx_set_auto_clear_halt(int sub_api, struct libusb_device_handle *dev_handle,
+	unsigned char endpoint, int enable)
+{
+	struct libusb_context *ctx;
+	struct winusb_device_handle_priv *handle_priv;
+	struct winusb_device_priv *priv;
+	UCHAR policy;
+	int interface;
+	HANDLE winusb_handle;
+
+	ctx = HANDLE_CTX(dev_handle);
+
+	if (!ctx)
+		return LIBUSB_ERROR_INVALID_PARAM;
+
+	if (endpoint & ~(LIBUSB_ENDPOINT_DIR_MASK | LIBUSB_ENDPOINT_ADDRESS_MASK)) {
+		usbi_err(ctx, "invalid endpoint 0x%02X passed, cannot set AUTO_CLEAR_STALL", endpoint);
+		return LIBUSB_ERROR_INVALID_PARAM;
+	}
+
+	handle_priv = get_winusb_device_handle_priv(dev_handle);
+	priv = usbi_get_device_priv(dev_handle->dev);
+	interface = interface_by_endpoint(priv, handle_priv, endpoint);
+
+	if (interface < 0) {
+		usbi_err(ctx, "unable to match endpoint 0x%02X to an open interface - cannot set AUTO_CLEAR_STALL", endpoint);
+		return LIBUSB_ERROR_NOT_FOUND;
+	}
+
+	usbi_dbg(ctx, "matched endpoint 0x%02X to interface %d", endpoint, interface);
+
+	if (priv->usb_interface[interface].apib->id != USB_API_WINUSBX) {
+		usbi_err(ctx, "interface %d is not managed by WinUSB, cannot set AUTO_CLEAR_STALL", interface);
+		return LIBUSB_ERROR_NOT_SUPPORTED;
+	}
+
+	winusb_handle = handle_priv->interface_handle[interface].api_handle;
+
+	if (!HANDLE_VALID(winusb_handle)) {
+		usbi_err(ctx, "WinUSB handle not valid for interface %d, cannot set AUTO_CLEAR_STALL", interface);
+		return LIBUSB_ERROR_NOT_FOUND;
+	}
+
+	CHECK_WINUSBX_AVAILABLE(sub_api);
+
+	policy = enable ? TRUE : FALSE;
+
+	if (!WinUSBX[sub_api].SetPipePolicy(winusb_handle, endpoint,
+					     AUTO_CLEAR_STALL, sizeof(UCHAR), &policy)) {
+		DWORD error = GetLastError();
+		usbi_err(ctx, "failed to %s AUTO_CLEAR_STALL for endpoint 0x%02X: %s",
+			enable ? "enable" : "disable", endpoint, windows_error_str(error));
+
+		switch (error) {
+		case ERROR_INVALID_HANDLE:
+		case ERROR_INVALID_PARAMETER:
+			return LIBUSB_ERROR_INVALID_PARAM;
+		default:
+			return LIBUSB_ERROR_OTHER;
+		}
+	}
+
+	usbi_dbg(ctx, "%s AUTO_CLEAR_STALL for endpoint 0x%02X",
+		enable ? "enabled" : "disabled", endpoint);
+
+	return LIBUSB_SUCCESS;
 }
 
 /*
@@ -5475,4 +5567,28 @@ static int composite_get_max_raw_io_transfer_size(int sub_api,
 
 	return priv->usb_interface[current_interface].apib->
 		get_max_raw_io_transfer_size(priv->usb_interface[current_interface].sub_api, dev_handle, endpoint);
+}
+
+static int composite_set_auto_clear_halt(int sub_api, struct libusb_device_handle *dev_handle,
+	unsigned char endpoint, int enable)
+{
+	struct winusb_device_handle_priv *handle_priv = get_winusb_device_handle_priv(dev_handle);
+	struct winusb_device_priv *priv = usbi_get_device_priv(dev_handle->dev);
+	int current_interface;
+
+	UNUSED(sub_api);
+
+	current_interface = interface_by_endpoint(priv, handle_priv, endpoint);
+	if (current_interface < 0) {
+		usbi_err(HANDLE_CTX(dev_handle), "unable to match endpoint to an open interface - cannot set AUTO_CLEAR_STALL");
+		return LIBUSB_ERROR_NOT_FOUND;
+	}
+
+	if (priv->usb_interface[current_interface].apib->set_auto_clear_halt == NULL) {
+		usbi_dbg(HANDLE_CTX(dev_handle), "device driver doesn't support setting AUTO_CLEAR_STALL");
+		return LIBUSB_ERROR_NOT_SUPPORTED;
+	}
+
+	return priv->usb_interface[current_interface].apib->
+		set_auto_clear_halt(priv->usb_interface[current_interface].sub_api, dev_handle, endpoint, enable);
 }
